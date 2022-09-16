@@ -1,3 +1,7 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use <$>" #-}
+
+
 module Parser(parseExpr) where
 import Text.Parsec
 import Text.Parsec.String
@@ -22,10 +26,13 @@ langDef = Tok.LanguageDef
     , Tok.opStart         = oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Tok.opLetter        = oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Tok.reservedNames   = [
-        "=","->","=>","fn","let","in",
-        "match", "of", "|",
+        "=", "->", "=>",
+        "fn", "let", "letrec", "in",
+        "match", "case", "of", "|",
         "if","then","else",
-        "true", "false"
+        "true", "false","()",
+        "iadd","isub","ineg",
+        "read-int", "write-int"
     ]
     , Tok.reservedOpNames = []
     , Tok.caseSensitive   = True
@@ -46,6 +53,15 @@ reservedOp = Tok.reservedOp lexer
 semiSep :: Parser a -> Parser [a]
 semiSep = Tok.semiSep lexer
 
+whiteSpace :: Parser ()
+whiteSpace = Tok.whiteSpace lexer
+
+spaces1 :: Parser ()
+spaces1 = skipMany1 space
+
+peek :: Parser a -> Parser b -> Parser b
+peek p1 p2 = (try . lookAhead) p1 >> p2
+
 litInt :: Parser Int
 litInt = fromIntegral <$> Tok.integer lexer
 
@@ -59,66 +75,94 @@ litBool = reserved "true" $> True
 litChar :: Parser Char
 litChar = Tok.charLiteral lexer
 
-litString :: Parser String
-litString = Tok.stringLiteral lexer
+litUnit :: Parser ()
+litUnit = reserved "()"
+
+--litString :: Parser String
+--litString = Tok.stringLiteral lexer
 
 literal :: Parser Literal
-literal = do
-        LInt <$> litInt
+literal = LInt <$> litInt
     <|> LReal <$> litReal
     <|> LBool <$> litBool
     <|> LChar <$> litChar
+    <|> LUnit <$ litUnit
     <?> "literal"
 
-whiteSpace :: Parser ()
-whiteSpace = Tok.whiteSpace lexer
-
-peek :: Parser a -> Parser b -> Parser b
-peek p1 p2 = (try . lookAhead) p1 >> p2
+prim :: Parser Prim
+prim = IAdd <$ reserved "iadd"
+    <|> ISub <$ reserved "isub"
+    <|> INeg <$ reserved "ineg"
+    <|> INeg <$ reserved "ineg"
 
 varName :: Parser Name
 varName = fmap T.pack (Tok.identifier lexer)
 
-spaces1 :: Parser ()
-spaces1 = skipMany1 space
+eLit :: Parser (Expr Name)
+eLit = ELit <$> literal
 
-variable :: Parser (Expr Name)
-variable = EVar <$> varName
+eVar :: Parser (Expr Name)
+eVar = EVar <$> varName
 
-lambda :: Parser (Expr Name)
-lambda = do
+eLam :: Parser (Expr Name)
+eLam = do
     reserved "fn" <?> "token \"fn\""
-    args <- many1 varName <?> "arg!"
-    reserved "->" <?> "arrow \"->\""
-    body <- application
+    args <- many1 varName <?> "parameter list"
+    reserved "->" <?> "token \"->\""
+    body <- eAppOpr <?> "function body"
     return $ ELam args body
 
 
-application :: Parser (Expr Name)
-application = do
-    xs <- sepBy1 expression spaces
-    return $ EApp xs
+-- kind of confusing, 'cause it doesn't always returns applaction
+-- for example: (f x y) will return EApp f [EVar x, EVar y]
+-- and (f x) will return EApp f []
+-- while (f) will return EVar f
+eApp :: Parser (Expr Name)
+eApp = parens eAppOpr
 
-letIn :: Parser (Expr Name)
-letIn = do
-    reserved "let"
-    var <- varName <?> "var!"
+
+def :: Parser (Def Name)
+def = do
+    name <- varName <?> "parameter list"
     reserved "="
-    def <- application <?> "app!"
+    body <- expr <?> "function body"
+    return $ Def { name, body }
+
+eLet :: Parser (Expr Name)
+eLet = do
+    reserved "let"
+    defs <- sepBy1 def (reserved ";")
     reserved "in"
-    body <- application
-    return $ ELet var def body
+    body <- expr
+    return $ ELet defs body
 
-expression :: Parser (Expr Name)
-expression = do
-        peek (reserved "fn") lambda
-    <|> peek (reserved "let") letIn
-    <|> peek (char '(') (parens application)
-    -- <|> peek (reserved "match") case'
-    <|> try variable
-    <|> ELit <$> literal
-    <?> "Can't Parse Expression!"
+eLetRec :: Parser (Expr Name)
+eLetRec = do
+    reserved "letrec"
+    defs <- sepBy1 def (reserved ";")
+    reserved "in"
+    body <- expr
+    return $ ELet defs body
 
+-- returns either EApp or EOpr
+eAppOpr :: Parser (Expr Name)
+eAppOpr = parens $ do
+    mayprim <- optionMaybe prim
+    xs <- sepBy1 expr spaces
+    case (mayprim,xs) of
+        (Just prim, args) ->
+            if arity prim == length args
+            then return $ EOpr prim args
+            else fail "arity doesn't match"
+        (Nothing, func:args) ->
+            return $ EApp func args
+        (Nothing, []) ->
+            -- this should never happen, 'cause "()" is a keyword for unit
+            fail "application without function, what?"
+
+expr :: Parser (Expr Name)
+expr = choice 
+    [ eAppOpr, eLit, eVar, eLam, eLet, eLetRec ]
 
 tupled :: Parser a -> Parser [a]
 tupled p = parens $ sepBy p (char ',')
@@ -153,13 +197,13 @@ branch = do
     reserved "|"
     pat <- pattern'
     spaces >> reserved "=>" >> spaces
-    body <- expression
+    body <- expr
     return (pat,body)
 
 case' :: Parser Expr
 case' = do
     reserved "match"
-    expr <- expression
+    expr <- expr
     reserved "of"
     cases <- many1 branch
     return $ ECase expr cases
@@ -167,4 +211,4 @@ case' = do
 
 
 parseExpr :: String -> Either ParseError (Expr Name)
-parseExpr = parse expression "input"
+parseExpr = parse expr "input"

@@ -6,7 +6,7 @@ import Syntax
 
 import Prettyprinter as PP
 import Prettyprinter.Render.Text as PPRT
-import Interp (Value (VLit, VClos))
+import Interp (Value (VLit, VClos, VFix))
 
 bracketed :: [Doc ann] -> Doc ann
 bracketed =  PP.encloseSep "(" ")" " "
@@ -18,9 +18,6 @@ instance Show Literal where
     show e = T.unpack $ docRender (pretty e)
 
 instance Show Prim where
-    show e = T.unpack $ docRender (pretty e)
-
-instance Show EffPrim where
     show e = T.unpack $ docRender (pretty e)
 
 instance Pretty a => Show (Expr a) where
@@ -42,24 +39,22 @@ instance Pretty Prim where
     pretty IAdd = "iadd"
     pretty ISub = "isub"
     pretty INeg = "ineg"
-
-instance Pretty EffPrim where
     pretty IOReadInt = "read-int"
     pretty IOWriteInt = "write-int"
 
 instance Pretty a => Pretty (Expr a) where
     pretty (ELit b) = pretty b
     pretty (EVar x) = pretty x
-    pretty (ELam xs e) =
-        "(λ." <+> PP.sep (fmap pretty xs) <+> "->" <+> pretty e <> ")"
-    pretty (EApp es) =
-        PP.encloseSep "(" ")" " " (fmap pretty es)
+    pretty (ELam xs body) =
+        "(λ." <+> PP.sep (fmap pretty xs) <+> "->" <+> pretty body <> ")"
+    pretty (EApp func args) =
+        PP.encloseSep "(" ")" " " (fmap pretty (func:args))
     pretty (EOpr prim args) =
         PP.encloseSep "(" ")" " " (pretty prim: fmap pretty args)
-    pretty (EEff prim args) =
-        PP.encloseSep "(" ")" " " (pretty prim: fmap pretty args)
-    pretty (ELet x e1 e2) =
+    pretty (ELet defs e2) =
         "todo: let"
+    pretty (ELetRec defs e2) =
+        "todo: letrec"
         --PP.encloseSep "(" ")" " " (fmap pretty es)
     {-
     pretty t@ELet{} =
@@ -70,7 +65,8 @@ instance Pretty a => Pretty (Expr a) where
     -}
 instance Pretty a => Pretty (Value a) where
     pretty (VLit lit) = pretty lit
-    pretty VClos {} = "<closure>"
+    pretty (VClos _ _ _) = "<closure>"
+    pretty (VFix expr) = "<fixed:" <+> pretty expr <+> ">"
 
 {-
 instance Pretty LitType where

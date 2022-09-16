@@ -52,3 +52,4 @@ executable EoC-lab
     default-extensions:
         LambdaCase
         , StrictData
+        , NamedFieldPuns

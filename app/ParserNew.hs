@@ -32,6 +32,8 @@ langDef = Tok.LanguageDef
         "if","then","else",
         "true", "false","()",
         "iadd","isub","ineg",
+        "cmpeq","cmpne","cmpgr","cmpls","cmpge","cmple",
+        "band","bor","bxor","bnot",
         "read-int", "write-int"
     ]
     , Tok.reservedOpNames = []
@@ -93,14 +95,24 @@ primitive :: Parser Prim
 primitive = IAdd <$ reserved "iadd"
     <|> ISub <$ reserved "isub"
     <|> INeg <$ reserved "ineg"
-    <|> INeg <$ reserved "ineg"
+    <|> ICmp Eq <$ reserved "cmpeq"
+    <|> ICmp Ne <$ reserved "cmpne"
+    <|> ICmp Gr <$ reserved "cmpgr"
+    <|> ICmp Ls <$ reserved "cmpls"
+    <|> ICmp Ge <$ reserved "cmpge"
+    <|> ICmp Le <$ reserved "cmple"
+    <|> BAnd <$ reserved "band"
+    <|> BOr <$ reserved "bor"
+    <|> BNot <$ reserved "bnot"
+    <|> BNot <$ reserved "bxor"
+
 
 name :: Parser Name
 name = fmap T.pack (Tok.identifier lexer)
 
 exprNoApp :: Parser (Expr Name)
 exprNoApp = choice 
-    [ eLit, eVar, eLam, eOpr, eLet, eFix, parens expr ]
+    [ eLit, eVar, eLam, eOpr, eLet, eFix, eIfte, parens expr ]
 
 expr :: Parser (Expr Name)
 expr = do

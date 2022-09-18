@@ -6,8 +6,9 @@ import Syntax
 
 import Prettyprinter as PP
 import Prettyprinter.Render.Text as PPRT
-import Interp (Value (VLit, VClos, VFix))
 import Text.Parsec (newline)
+import Prettyprinter.Render.String (renderString)
+-- import Interp
 
 bracketed :: [Doc ann] -> Doc ann
 bracketed =  PP.encloseSep "(" ")" " "
@@ -18,6 +19,15 @@ tupled =  PP.encloseSep "(" ")" " "
 docRender :: Doc ann -> T.Text
 docRender = renderStrict . layoutPretty defaultLayoutOptions
 
+docRenderString :: Doc ann -> String
+docRenderString = renderString . layoutPretty defaultLayoutOptions
+
+prettyPrint :: Pretty a => a -> IO ()
+prettyPrint x = putStr $ docRenderString $ pretty x
+
+prettyPrintLn :: Pretty a => a -> IO ()
+prettyPrintLn x = putStrLn $ docRenderString $ pretty x
+
 instance Show Literal where
     show e = T.unpack $ docRender (pretty e)
 
@@ -25,9 +35,6 @@ instance Show Prim where
     show e = T.unpack $ docRender (pretty e)
 
 instance Pretty a => Show (Expr a) where
-    show e = T.unpack $ docRender (pretty e)
-
-instance Pretty a => Show (Value a) where
     show e = T.unpack $ docRender (pretty e)
 
 instance Pretty Literal where
@@ -41,6 +48,16 @@ instance Pretty Prim where
     pretty IAdd = "iadd"
     pretty ISub = "isub"
     pretty INeg = "ineg"
+    pretty (ICmp Eq) = "cmpeq"
+    pretty (ICmp Ne) = "cmpne"
+    pretty (ICmp Gr) = "cmpgr"
+    pretty (ICmp Ls) = "cmpls"
+    pretty (ICmp Ge) = "cmpge"
+    pretty (ICmp Le) = "cmple"
+    pretty BNot = "bnot"
+    pretty BAnd = "band"
+    pretty BOr = "bor"
+    pretty BXor = "bxor"
     pretty IOReadInt = "read-int"
     pretty IOWriteInt = "write-int"
 
@@ -67,14 +84,16 @@ instance Pretty a => Pretty (Expr a) where
             indent 2 (pretty e2) <> PP.hardline <>
         "end" <> PP.hardline
     pretty (EIfte cond trbr flbr) =
-        "if" <> pretty cond <> PP.softline <>
-        "then" <> pretty trbr <> PP.softline <>
-        "else" <> pretty flbr <> PP.softline
+        "if" <+> pretty cond <> PP.softline <>
+        "then" <+> pretty trbr <> PP.softline <>
+        "else" <+> pretty flbr <> PP.softline
 
+{-
 instance Pretty a => Pretty (Value a) where
     pretty (VLit lit) = pretty lit
     pretty (VClos _ _ _) = "<closure>"
     pretty (VFix _ _ _ _) = "<fixed closure>"
+-}
 
 {-
 instance Pretty LitType where

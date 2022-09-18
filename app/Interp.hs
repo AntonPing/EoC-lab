@@ -3,13 +3,19 @@
 {-# HLINT ignore "Use record patterns" #-}
 
 module Interp where
-import Data.Map as M
-import Data.List as L
+import qualified Data.Map as M
+import qualified Data.List as L
+import qualified Data.Text as T
 import Syntax
 import Data.Maybe (fromMaybe, fromJust)
 import Text.Read (readMaybe)
 import Control.Monad
 import Control.Monad.Except
+import Prettyprinter (Pretty (pretty))
+import Prettyprinter.Render.String (renderString)
+import Printer (docRenderString, docRender, prettyPrintLn, prettyPrint)
+import Debug.Trace
+
 
 data Value a
     = VLit Literal
@@ -17,6 +23,16 @@ data Value a
     -- VFix is almost like VClos
     -- but each time you evaluate it, you inject the defs into the old env
     | VFix (Env a) [a] (Expr a) (M.Map a (Def a))
+
+type Env a = M.Map a (Value a)
+
+instance Pretty a => Show (Value a) where
+    show e = T.unpack $ docRender (pretty e)
+
+instance Pretty a => Pretty (Value a) where
+    pretty (VLit lit) = pretty lit
+    pretty (VClos _ _ _) = pretty "<closure>"
+    pretty (VFix _ _ _ _) = pretty "<fixed closure>"
 
 data InterpError
     = UnboundVar String
@@ -26,16 +42,16 @@ data InterpError
     | CondNotBool String
     deriving (Show)
 
-type Env a = M.Map a (Value a)
-
-interp :: Ord a => Expr a -> IO (Either InterpError (Value a))
+interp :: (Ord a, Pretty a) => Expr a -> IO (Either InterpError (Value a))
 interp expr = runExceptT $ interp' M.empty expr
 
-interp' :: Ord a => Env a -> Expr a -> ExceptT InterpError IO (Value a)
-interp' env (EVar x) =
-    case M.lookup x env of
+interp' :: (Ord a, Pretty a) => Env a -> Expr a -> ExceptT InterpError IO (Value a)
+interp' env (EVar x) = do
+    lift $ prettyPrint x
+    lift $ prettyPrintLn $ M.toAscList env
+    case L.lookup x (M.toAscList env) of
         Just val -> return val
-        Nothing -> throwError $ UnboundVar "unbounded variable"
+        Nothing -> throwError $ UnboundVar$ "unbounded variable " ++ docRenderString (pretty x)
 interp' env (ELit c) =
     return $ VLit c
 interp' env (ELam xs body) =
@@ -54,6 +70,7 @@ interp' env (EApp func args) = do
         (VFix env' xs e defs) ->
             if length xs == length args
             then do
+                lift $ putStrLn "inject"
                 args' <- mapM (interp' env) args
                 let env'' = injectFix defs env' -- inject defs into env'
                 interp' (M.fromAscList (zip xs args') `M.union` env'') e
@@ -67,6 +84,7 @@ interp' env (ELet x e1 e2) = do
 interp' env (EFix defs e) =
     let assoc = fmap (\def -> (func def, def)) defs
         defs' = M.fromAscList assoc
+        -- env' = injectFix defs' env
     in interp' (injectFix defs' env) e
 interp' env (EIfte cond trbr flbr) = do
     val <- interp' env cond
@@ -82,6 +100,16 @@ interpOpr IAdd [VLit (LInt x), VLit (LInt y)] =
     return $ VLit $ LInt (x + y)
 interpOpr ISub [VLit (LInt x), VLit (LInt y)] =
     return $ VLit $ LInt (x - y)
+interpOpr (ICmp cmp) [VLit (LInt x), VLit (LInt y)] =
+    return $ VLit $ LBool (icompare cmp x y)
+interpOpr BNot [VLit (LBool x)] =
+    return $ VLit $ LBool (not x)
+interpOpr BAnd [VLit (LBool x), VLit (LBool y)] =
+    return $ VLit $ LBool (x && y)
+interpOpr BOr [VLit (LBool x), VLit (LBool y)] =
+    return $ VLit $ LBool (x || y)
+interpOpr BXor [VLit (LBool x), VLit (LBool y)] =
+    return $ VLit $ LBool ((x && not y) || (not x && y))
 interpOpr IOReadInt [] = do
     s <- lift getLine
     case readMaybe s :: Maybe Int of
@@ -97,3 +125,11 @@ injectFix :: Ord a => M.Map a (Def a) -> Env a -> Env a
 injectFix defs env =
     let f Def{func,args,body} = VFix env args body defs
     in fmap f defs `M.union` env
+
+icompare :: Compare -> Int -> Int -> Bool
+icompare Eq = (==)
+icompare Ne = (/=)
+icompare Gr = (>)
+icompare Ls = (<)
+icompare Ge = (>=)
+icompare Le = (<=)

@@ -29,6 +29,11 @@ say arg = do
     liftIO $ putStrLn $ "cowsay" ++ " " ++ arg
     return ()
 
+load :: Cmd Repl
+load arg = do
+    str <- lift $ lift $ readFile arg
+    eval str
+
 quit :: Cmd Repl
 quit arg = abort
 
@@ -44,7 +49,6 @@ eval arg = liftIO $ do
             print val
             -- typeInferIO expr
 
-
 -- Settings --
 replBan :: MultiLine -> Repl String
 replBan SingleLine = return "> "
@@ -59,6 +63,7 @@ replOpts =
     , ("say", say)
     , ("eval", eval)
     , ("quit", quit)
+    , ("load", load)
     ]
 
 completer :: Monad m => WordCompleter m

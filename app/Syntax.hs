@@ -2,6 +2,7 @@ module Syntax (
       Name
     , Literal(..)
     , Prim(..)
+    , Compare(..)
     , Def(..)
     , Expr(..)
     , arity
@@ -18,10 +19,21 @@ data Literal
     | LUnit
     deriving (Eq, Ord)
 
+data Compare = Eq | Ne | Gr | Ls | Ge | Le
+    deriving (Eq, Ord)
+
 data Prim
     = IAdd
     | ISub
     | INeg
+    -- interger comparing primitives
+    | ICmp Compare
+    -- boolean primitives
+    | BNot
+    | BAnd
+    | BOr
+    | BXor
+    -- IO primitives
     | IOReadInt
     | IOWriteInt
     deriving (Eq, Ord)
@@ -59,9 +71,15 @@ data Kind =
     | KArr Kind Kind
     deriving (Eq, Ord)
 
+
 arity :: Prim -> Int
 arity IAdd = 2
 arity ISub = 2
 arity INeg = 1
+arity (ICmp _) = 2
+arity BNot = 1
+arity BAnd = 2
+arity BOr = 2
+arity BXor = 2
 arity IOReadInt = 0
 arity IOWriteInt = 1

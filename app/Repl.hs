@@ -13,7 +13,7 @@ import qualified Data.List as L
 import qualified Data.Text as T
 
 import Syntax ( Expr, Name )
-import Parser (parseExpr)
+import ParserNew (parseExpr)
 import Printer
 import Interp
 

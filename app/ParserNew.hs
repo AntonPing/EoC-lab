@@ -2,7 +2,7 @@
 {-# HLINT ignore "Use <$>" #-}
 
 
-module Parser(parseExpr) where
+module ParserNew(parseExpr) where
 import Text.Parsec as P
 import Text.Parsec.String
 import qualified Text.Parsec.Token as Tok
@@ -27,7 +27,7 @@ langDef = Tok.LanguageDef
     , Tok.opLetter        = oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Tok.reservedNames   = [
         "=", "->", "=>",
-        "fn", "let", "letrec", "in",
+        "fn", "let", "letrec", "in", "end",
         "match", "case", "of", "|",
         "if","then","else",
         "true", "false","()",
@@ -89,96 +89,101 @@ literal = LInt <$> litInt
     <|> LUnit <$ litUnit
     <?> "literal"
 
-prim :: Parser Prim
-prim = IAdd <$ reserved "iadd"
+primitive :: Parser Prim
+primitive = IAdd <$ reserved "iadd"
     <|> ISub <$ reserved "isub"
     <|> INeg <$ reserved "ineg"
     <|> INeg <$ reserved "ineg"
 
-varName :: Parser Name
-varName = fmap T.pack (Tok.identifier lexer)
+name :: Parser Name
+name = fmap T.pack (Tok.identifier lexer)
+
+exprNoApp :: Parser (Expr Name)
+exprNoApp = choice 
+    [ eLit, eVar, eLam, eOpr, eLet, eFix, parens expr ]
+
+expr :: Parser (Expr Name)
+expr = do
+    func <- exprNoApp
+    argss <- many $ tupled expr
+    return $ foldl EApp func argss
 
 eLit :: Parser (Expr Name)
 eLit = ELit <$> literal
 
 eVar :: Parser (Expr Name)
-eVar = EVar <$> varName
+eVar = EVar <$> name
 
 eLam :: Parser (Expr Name)
 eLam = do
     reserved "fn" <?> "token \"fn\""
-    args <- many1 varName <?> "parameter list"
+    args <- tupled name <?> "parameter list"
     reserved "=>" <?> "token \"->\""
-    body <- eAppOpr <?> "function body"
+    body <- expr <?> "function body"
     return $ ELam args body
-
-
--- kind of confusing, 'cause it doesn't always returns applaction
--- for example: (f x y) will return EApp f [EVar x, EVar y]
--- and (f x) will return EApp f []
--- while (f) will return EVar f
-eApp :: Parser (Expr Name)
-eApp = parens eAppOpr
 
 tupled :: Parser a -> Parser [a]
 tupled p = parens $ sepBy p (char ',')
 
-def :: Parser (Def Name)
-def = do
-    func <- varName <?> "parameter list"
-    args <- tupled varName
-    reserved "="
-    body <- expr <?> "function body"
-    return $ Def { func, args, body }
+-- backtracking is bad, this is never used.
+eApp :: Parser (Expr Name)
+eApp = do
+    func <- expr
+    args <- tupled expr
+    return $ EApp func args
+
+eOpr :: Parser (Expr Name)
+eOpr = do
+    prim <- primitive
+    args <- tupled expr
+    return $ EOpr prim args
 
 eLet :: Parser (Expr Name)
 eLet = do
     reserved "let"
-    name <- varName
+    name <- name
     reserved "="
     body <- expr
     reserved ";"
     cont <- expr
     return $ ELet name body cont
 
+def :: Parser (Def Name)
+def = do
+    func <- name <?> "function name"
+    args <- tupled name <?> "parameter list"
+    reserved "="
+    body <- expr <?> "function body"
+    reserved ";"
+    return $ Def { func, args, body }
+
 eFix :: Parser (Expr Name)
 eFix = do
     reserved "letrec"
-    defs <- sepBy1 def (reserved ";")
+    defs <- many1 def
     reserved "in"
     cont <- expr
+    reserved "end"
     return $ EFix defs cont
 
--- returns either EApp or EOpr
-eAppOpr :: Parser (Expr Name)
-eAppOpr = parens $ do
-    mayprim <- optionMaybe prim
-    xs <- sepBy1 expr spaces
-    case (mayprim,xs) of
-        (Just prim, args) ->
-            if arity prim == length args
-            then return $ EOpr prim args
-            else fail "arity doesn't match"
-        (Nothing, func:args) ->
-            return $ EApp func args
-        (Nothing, []) ->
-            -- this should never happen, 'cause "()" is a keyword for unit
-            fail "application without function, what?"
-
-expr :: Parser (Expr Name)
-expr = choice 
-    [ eAppOpr, eLit, eVar, eLam, eLet, eFix ]
-
-
+eIfte :: Parser (Expr Name)
+eIfte = do
+    reserved "if"
+    cond <- expr
+    reserved "then"
+    trbr <- expr
+    reserved "else"
+    flbr <- expr
+    return $ EIfte cond trbr flbr
 
 {-
 
 pVar :: Parser Pattern
-pVar = PVar <$> varName
+pVar = PVar <$> name
 {-
 pCon :: Parser Pattern
 pCon = parens $ do
-    x <- varName
+    x <- name
     xs <- sepBy1 pattern' spaces
     return $ PCon x xs
 -}

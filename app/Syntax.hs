@@ -1,4 +1,11 @@
-module Syntax where
+module Syntax (
+      Name
+    , Literal(..)
+    , Prim(..)
+    , Def(..)
+    , Expr(..)
+    , arity
+) where
 import Data.Text as T
 
 type Name = T.Text
@@ -20,7 +27,8 @@ data Prim
     deriving (Eq, Ord)
 
 data Def a = Def 
-    { name :: a
+    { func :: a
+    , args :: [a]
     , body :: Expr a
     } deriving (Eq, Ord)
 
@@ -30,8 +38,9 @@ data Expr a
     | ELam [a] (Expr a)
     | EApp (Expr a) [Expr a]
     | EOpr Prim [Expr a]
-    | ELet [Def a] (Expr a)
-    | ELetRec [Def a] (Expr a)
+    | ELet a (Expr a) (Expr a)
+    | EFix [Def a] (Expr a)
+    | EIfte (Expr a) (Expr a) (Expr a)
     deriving (Eq, Ord)
 
 data Type =

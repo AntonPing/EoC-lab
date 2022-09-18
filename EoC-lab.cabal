@@ -32,8 +32,10 @@ executable EoC-lab
         Syntax
         , Interp
         , Parser
+        , ParserNew
         , Printer
         , Repl
+        , Backend
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

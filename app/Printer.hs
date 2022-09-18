@@ -7,9 +7,13 @@ import Syntax
 import Prettyprinter as PP
 import Prettyprinter.Render.Text as PPRT
 import Interp (Value (VLit, VClos, VFix))
+import Text.Parsec (newline)
 
 bracketed :: [Doc ann] -> Doc ann
 bracketed =  PP.encloseSep "(" ")" " "
+
+tupled :: [Doc ann] -> Doc ann
+tupled =  PP.encloseSep "(" ")" " "
 
 docRender :: Doc ann -> T.Text
 docRender = renderStrict . layoutPretty defaultLayoutOptions
@@ -26,8 +30,6 @@ instance Pretty a => Show (Expr a) where
 instance Pretty a => Show (Value a) where
     show e = T.unpack $ docRender (pretty e)
 
--- instance Pretty Name where
-
 instance Pretty Literal where
     pretty (LInt n) = pretty n
     pretty (LReal x) = pretty x
@@ -42,31 +44,37 @@ instance Pretty Prim where
     pretty IOReadInt = "read-int"
     pretty IOWriteInt = "write-int"
 
+instance Pretty a => Pretty (Def a) where
+    pretty Def{ func, args, body } =
+        pretty func <> PP.tupled (fmap pretty args) <+> "=" <+> pretty body <> ";"
+
 instance Pretty a => Pretty (Expr a) where
     pretty (ELit b) = pretty b
     pretty (EVar x) = pretty x
     pretty (ELam xs body) =
-        "(λ." <+> PP.sep (fmap pretty xs) <+> "->" <+> pretty body <> ")"
+        "(fn" <+> PP.tupled (fmap pretty xs) <+> "=>" <+> pretty body <> ")"
     pretty (EApp func args) =
-        PP.encloseSep "(" ")" " " (fmap pretty (func:args))
+        pretty func <> PP.tupled (fmap pretty args)
     pretty (EOpr prim args) =
-        PP.encloseSep "(" ")" " " (pretty prim: fmap pretty args)
-    pretty (ELet defs e2) =
-        "todo: let"
-    pretty (ELetRec defs e2) =
-        "todo: letrec"
-        --PP.encloseSep "(" ")" " " (fmap pretty es)
-    {-
-    pretty t@ELet{} =
-        "let" <+> PP.vsep xs <+> PP.softline <+> "in" <+> pretty t
-        where
-            (xs',t') = letUnfold t
-            xs = fmap (\(x,y) -> pretty x <+> "=" <+> pretty y) xs'
-    -}
+        pretty prim <> PP.tupled (fmap pretty args)
+    pretty (ELet x e1 e2) =
+        "let" <+> pretty x <+> "=" <+> pretty e1 <> ";" <> PP.hardline <>
+        align (pretty e2)
+    pretty (EFix defs e2) =
+        "letrec" <> PP.hardline <>
+            indent 2 (PP.vsep (fmap pretty defs)) <> PP.hardline <>
+        "in" <> PP.hardline <>
+            indent 2 (pretty e2) <> PP.hardline <>
+        "end" <> PP.hardline
+    pretty (EIfte cond trbr flbr) =
+        "if" <> pretty cond <> PP.softline <>
+        "then" <> pretty trbr <> PP.softline <>
+        "else" <> pretty flbr <> PP.softline
+
 instance Pretty a => Pretty (Value a) where
     pretty (VLit lit) = pretty lit
     pretty (VClos _ _ _) = "<closure>"
-    pretty (VFix expr) = "<fixed:" <+> pretty expr <+> ">"
+    pretty (VFix _ _ _ _) = "<fixed closure>"
 
 {-
 instance Pretty LitType where

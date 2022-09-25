@@ -1,7 +1,3 @@
-{-# OPTIONS_GHC -Wno-typed-holes #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use record patterns" #-}
-
 module Interp where
 import qualified Data.Map as M
 import qualified Data.List as L
@@ -42,19 +38,17 @@ data InterpError
     | CondNotBool String
     deriving (Show)
 
-interp :: (Ord a, Pretty a) => Expr a -> IO (Either InterpError (Value a))
+interp :: Ord a => Expr a -> IO (Either InterpError (Value a))
 interp expr = runExceptT $ interp' M.empty expr
 
-interp' :: (Ord a, Pretty a) => Env a -> Expr a -> ExceptT InterpError IO (Value a)
+interp' :: Ord a => Env a -> Expr a -> ExceptT InterpError IO (Value a)
 interp' env (EVar x) = do
-    lift $ prettyPrint x
-    lift $ prettyPrintLn $ M.toAscList env
-    case L.lookup x (M.toAscList env) of
+    case M.lookup x env of
         Just val -> return val
-        Nothing -> throwError $ UnboundVar$ "unbounded variable " ++ docRenderString (pretty x)
+        Nothing -> throwError $ UnboundVar "unbounded variable"
 interp' env (ELit c) =
     return $ VLit c
-interp' env (ELam xs body) =
+interp' env (EFun xs body) =
     return $ VClos env xs body
 interp' env (EApp func args) = do
     func' <- interp' env func
@@ -65,15 +59,14 @@ interp' env (EApp func args) = do
             if length xs == length args
             then do
                 args' <- mapM (interp' env) args
-                interp' (M.fromAscList (zip xs args') `M.union` env') e
+                interp' (M.fromList (zip xs args') `M.union` env') e
             else throwError $ DiffArgNum "argument number doesn't match"
         (VFix env' xs e defs) ->
             if length xs == length args
             then do
-                lift $ putStrLn "inject"
                 args' <- mapM (interp' env) args
                 let env'' = injectFix defs env' -- inject defs into env'
-                interp' (M.fromAscList (zip xs args') `M.union` env'') e
+                interp' (M.fromList (zip xs args') `M.union` env'') e
             else throwError $ DiffArgNum "argument number doesn't match"
 interp' env (EOpr prim args) = do
     args' <- mapM (interp' env) args
@@ -83,8 +76,7 @@ interp' env (ELet x e1 e2) = do
     interp' (M.insert x e1' env) e2
 interp' env (EFix defs e) =
     let assoc = fmap (\def -> (func def, def)) defs
-        defs' = M.fromAscList assoc
-        -- env' = injectFix defs' env
+        defs' = M.fromList assoc
     in interp' (injectFix defs' env) e
 interp' env (EIfte cond trbr flbr) = do
     val <- interp' env cond
@@ -92,6 +84,8 @@ interp' env (EIfte cond trbr flbr) = do
         VLit (LBool p) ->
             interp' env (if p then trbr else flbr)
         _ -> throwError $ CondNotBool "the condition for if-then-else is not a boolean!"
+interp' env (EAnno expr ty) =
+    interp' env expr
 
 interpOpr :: Prim -> [Value a] -> ExceptT InterpError IO (Value a)
 interpOpr INeg [VLit (LInt n)] =
@@ -133,3 +127,5 @@ icompare Gr = (>)
 icompare Ls = (<)
 icompare Ge = (>=)
 icompare Le = (<=)
+
+

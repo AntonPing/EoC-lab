@@ -108,11 +108,11 @@ primitive = IAdd <$ reserved "iadd"
 
 
 name :: Parser Name
-name = fmap T.pack (Tok.identifier lexer)
+name = Tok.identifier lexer
 
 exprNoApp :: Parser (Expr Name)
 exprNoApp = choice 
-    [ eLit, eVar, eLam, eOpr, eLet, eFix, eIfte, parens expr ]
+    [ eLit, eVar, eFun, eOpr, eLet, eFix, eIfte, parens expr ]
 
 expr :: Parser (Expr Name)
 expr = do
@@ -126,13 +126,13 @@ eLit = ELit <$> literal
 eVar :: Parser (Expr Name)
 eVar = EVar <$> name
 
-eLam :: Parser (Expr Name)
-eLam = do
+eFun :: Parser (Expr Name)
+eFun = do
     reserved "fn" <?> "token \"fn\""
     args <- tupled name <?> "parameter list"
     reserved "=>" <?> "token \"->\""
     body <- expr <?> "function body"
-    return $ ELam args body
+    return $ EFun args body
 
 tupled :: Parser a -> Parser [a]
 tupled p = parens $ sepBy p (char ',')

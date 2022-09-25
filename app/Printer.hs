@@ -10,11 +10,11 @@ import Text.Parsec (newline)
 import Prettyprinter.Render.String (renderString)
 -- import Interp
 
-bracketed :: [Doc ann] -> Doc ann
-bracketed =  PP.encloseSep "(" ")" " "
+--bracketed :: [Doc ann] -> Doc ann
+--bracketed =  PP.encloseSep "(" ")" " "
 
-tupled :: [Doc ann] -> Doc ann
-tupled =  PP.encloseSep "(" ")" " "
+--tupled :: [Doc ann] -> Doc ann
+--tupled =  PP.encloseSep "(" ")" ","
 
 docRender :: Doc ann -> T.Text
 docRender = renderStrict . layoutPretty defaultLayoutOptions
@@ -35,6 +35,9 @@ instance Show Prim where
     show e = T.unpack $ docRender (pretty e)
 
 instance Pretty a => Show (Expr a) where
+    show e = T.unpack $ docRender (pretty e)
+
+instance Pretty a => Show (MonoType a) where
     show e = T.unpack $ docRender (pretty e)
 
 instance Pretty Literal where
@@ -60,6 +63,7 @@ instance Pretty Prim where
     pretty BXor = "bxor"
     pretty IOReadInt = "read-int"
     pretty IOWriteInt = "write-int"
+    pretty Move = "move"
 
 instance Pretty a => Pretty (Def a) where
     pretty Def{ func, args, body } =
@@ -68,7 +72,7 @@ instance Pretty a => Pretty (Def a) where
 instance Pretty a => Pretty (Expr a) where
     pretty (ELit b) = pretty b
     pretty (EVar x) = pretty x
-    pretty (ELam xs body) =
+    pretty (EFun xs body) =
         "(fn" <+> PP.tupled (fmap pretty xs) <+> "=>" <+> pretty body <> ")"
     pretty (EApp func args) =
         pretty func <> PP.tupled (fmap pretty args)
@@ -87,6 +91,8 @@ instance Pretty a => Pretty (Expr a) where
         "if" <+> pretty cond <> PP.softline <>
         "then" <+> pretty trbr <> PP.softline <>
         "else" <+> pretty flbr <> PP.softline
+    pretty (EAnno expr ty) =
+        pretty expr <+> ":" -- <+> pretty ty
 
 {-
 instance Pretty a => Pretty (Value a) where
@@ -95,32 +101,32 @@ instance Pretty a => Pretty (Value a) where
     pretty (VFix _ _ _ _) = "<fixed closure>"
 -}
 
-{-
-instance Pretty LitType where
-    pretty TInt = "Int"
-    pretty TReal = "Real"
-    pretty TBool = "Bool"
-    pretty TUnit = "Unit"
-    pretty TVoid = "Void"
 
+instance Pretty LitType where
+    pretty LitInt = "Int"
+    pretty LitReal = "Real"
+    pretty LitBool = "Bool"
+    pretty LitChar = "Char"
+    pretty LitUnit = "Unit"
+    pretty LitVoid = "Void"
+
+{-
 instance Pretty Kind where
     pretty Star = "*"
     pretty (KArr k1 k2) = pretty k1 <+> "->" <+> pretty k2
-
-instance Pretty Type where
-    pretty (TVar x) = pretty x
-    pretty (TLam x k t) =
-        "(Λ." <+> pretty x <+> ":" <+> pretty k <+> "->" <+> pretty t <> ")"
-        -- todo : fold and unfold for TLam
-    pretty (TApp t1 t2) = "(" <+> pretty t1 <+> pretty t2 <+> ")"
-    pretty (TLit lit) = pretty lit
-    pretty t@TArr{} = PP.encloseSep "(" ")" " -> "
-        (fmap pretty (tyArrUnfold t))
-    pretty (TTup xs) = PP.encloseSep "(" ")" "," (fmap pretty xs)
-    pretty (TSum xs) = PP.encloseSep "<" ">" "," (fmap pretty xs)
-    pretty (TForall xs ty) =
-        "forall" <+> PP.sep (fmap pretty xs) <+> pretty ty
 -}
+
+instance Pretty a => Pretty (MonoType a) where
+    pretty (TLit lit) = pretty lit
+    pretty (TVar x) = pretty x
+    pretty (TFun xs x) =
+        "fn" <+> PP.encloseSep "(" ")" "," (fmap pretty xs) <+> "->" <+> pretty x
+    pretty (TApp x xs) =
+        pretty x <> PP.encloseSep "<" ">" "," (fmap pretty xs)
+
+    --pretty (TTup xs) = PP.encloseSep "(" ")" "," (fmap pretty xs)
+    --pretty (TSum xs) = PP.encloseSep "<" ">" "," (fmap pretty xs)
+
 
 {-
 

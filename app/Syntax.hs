@@ -5,11 +5,14 @@ module Syntax (
     , Compare(..)
     , Def(..)
     , Expr(..)
+    , LitType(..)
+    , MonoType(..)
+    , PolyType(..)
     , arity
 ) where
 import Data.Text as T
 
-type Name = T.Text
+type Name = String
 
 data Literal
     = LInt Int
@@ -36,6 +39,8 @@ data Prim
     -- IO primitives
     | IOReadInt
     | IOWriteInt
+    -- just move
+    | Move
     deriving (Eq, Ord)
 
 data Def a = Def 
@@ -47,24 +52,34 @@ data Def a = Def
 data Expr a
     = ELit Literal
     | EVar a
-    | ELam [a] (Expr a)
+    | EFun [a] (Expr a)
     | EApp (Expr a) [Expr a]
     | EOpr Prim [Expr a]
     | ELet a (Expr a) (Expr a)
     | EFix [Def a] (Expr a)
     | EIfte (Expr a) (Expr a) (Expr a)
+    | EAnno (Expr a) (MonoType a)
     deriving (Eq, Ord)
 
-data Type =
-      TVar Name
-    | TLam Name Kind Type
-    | TApp Type Type
-    | TLit Literal
-    | TArr Type Type
-    | TTup [Type]
-    | TSum [Type]
-    | TForall [Name] Type
+data LitType
+    = LitInt
+    | LitReal
+    | LitBool
+    | LitChar
+    | LitUnit
+    | LitVoid
     deriving (Eq, Ord)
+
+data MonoType a
+    = TLit LitType
+    | TVar a
+    | TFun [MonoType a] (MonoType a)
+    | TApp (MonoType a) [MonoType a]
+    -- only used in HM type infer
+    -- | TTemp Int
+    deriving (Eq, Ord)
+
+data PolyType a = PolyType [a] (MonoType a) 
 
 data Kind = 
       Star

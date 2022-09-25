@@ -12,13 +12,17 @@ import qualified Data.Map as M
 import qualified Data.List as L
 import qualified Data.Text as T
 
-import Syntax ( Expr, Name )
+import Syntax ( Expr, Name, MonoType )
 import ParserNew (parseExpr)
 import Printer
 import Interp
+import Control.Monad.Except (ExceptT, MonadError (throwError), runExceptT)
+import TypeCheck (typeInferTop)
 
 type IState = M.Map String (Expr Name)
-type Repl = HaskelineT (StateT IState IO)
+type Repl = HaskelineT (StateT IState (ExceptT ReplError IO))
+
+data ReplError = ReplError
 
 -- Options --
 help :: Cmd Repl
@@ -29,25 +33,51 @@ say arg = do
     liftIO $ putStrLn $ "cowsay" ++ " " ++ arg
     return ()
 
-load :: Cmd Repl
-load arg = do
-    str <- lift $ lift $ readFile arg
-    eval str
-
 quit :: Cmd Repl
 quit arg = abort
 
+load :: Cmd Repl
+load arg = do
+    str <- liftIO $ readFile arg
+    eval str
+
 eval :: Cmd Repl
-eval arg = liftIO $ do 
+eval arg = do 
+    expr <- replParse arg
+    liftIO $ print expr
+    ty <- replTypeInfer expr
+    liftIO $ print ty
+    val <- replInterp expr
+    liftIO $ print val
+    return ()
+
+replParse :: String -> Repl (Expr Name)
+replParse arg = 
     case parseExpr arg of
         Left err -> do
-            putStrLn "parser failed."
-            print err
-        Right expr -> do
-            print expr
-            val <- interp expr
-            print val
-            -- typeInferIO expr
+            liftIO $ putStrLn "parser failed."
+            lift $ throwError ReplError
+        Right expr -> return expr
+    
+
+replTypeInfer :: Expr Name -> Repl (MonoType Name)
+replTypeInfer expr =
+    case typeInferTop expr of
+        Left errs -> do
+            liftIO $ putStrLn "typecheck failed."
+            lift $ throwError ReplError
+        Right ty -> return ty
+
+replInterp :: Expr Name -> Repl (Value Name)
+replInterp expr = do
+    res <- liftIO $ interp expr
+    case res of
+        Left err -> do
+            liftIO $ putStrLn "runtime errror."
+            liftIO $ print err
+            lift $ throwError ReplError
+        Right val -> return val
+
 
 -- Settings --
 replBan :: MultiLine -> Repl String
@@ -79,7 +109,7 @@ replFinal = liftIO $ do
     putStrLn "Bye!"
     return Exit
 
-setting :: ReplOpts (StateT IState IO)
+setting :: ReplOpts (StateT IState (ExceptT ReplError IO))
 setting = ReplOpts
   { banner           = replBan
   , command          = replCmd
@@ -92,4 +122,8 @@ setting = ReplOpts
   }
 
 repl :: IO ()
-repl = evalStateT (evalReplOpts setting) M.empty
+repl = do
+    res <- (runExceptT . flip evalStateT M.empty . evalReplOpts) setting
+    case res of
+        Left err -> putStrLn "repl failed."
+        Right _ -> return ()

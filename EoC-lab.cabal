@@ -34,6 +34,7 @@ executable EoC-lab
         , Parser
         , ParserNew
         , Printer
+        , TypeCheck
         , Repl
         , Backend
 

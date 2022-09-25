@@ -96,7 +96,7 @@ prim = IAdd <$ reserved "iadd"
     <|> INeg <$ reserved "ineg"
 
 varName :: Parser Name
-varName = fmap T.pack (Tok.identifier lexer)
+varName = Tok.identifier lexer
 
 eLit :: Parser (Expr Name)
 eLit = ELit <$> literal
@@ -104,13 +104,13 @@ eLit = ELit <$> literal
 eVar :: Parser (Expr Name)
 eVar = EVar <$> varName
 
-eLam :: Parser (Expr Name)
-eLam = do
+eFun :: Parser (Expr Name)
+eFun = do
     reserved "fn" <?> "token \"fn\""
     args <- many1 varName <?> "parameter list"
     reserved "=>" <?> "token \"->\""
     body <- eAppOpr <?> "function body"
-    return $ ELam args body
+    return $ EFun args body
 
 
 -- kind of confusing, 'cause it doesn't always returns applaction
@@ -167,7 +167,7 @@ eAppOpr = parens $ do
 
 expr :: Parser (Expr Name)
 expr = choice 
-    [ eAppOpr, eLit, eVar, eLam, eLet, eFix ]
+    [ eAppOpr, eLit, eVar, eFun, eLet, eFix ]
 
 
 

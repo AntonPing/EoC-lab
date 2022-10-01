@@ -32,7 +32,6 @@ executable EoC-lab
         Syntax
         , Interp
         , Parser
-        , ParserNew
         , Printer
         , TypeCheck
         , Repl

@@ -1,34 +1,15 @@
 module Interp where
+
 import qualified Data.Map as M
 import qualified Data.List as L
 import qualified Data.Text as T
-import Syntax
-import Data.Maybe (fromMaybe, fromJust)
 import Text.Read (readMaybe)
 import Control.Monad
 import Control.Monad.Except
-import Prettyprinter (Pretty (pretty))
-import Prettyprinter.Render.String (renderString)
-import Printer (docRenderString, docRender, prettyPrintLn, prettyPrint)
-import Debug.Trace
+import Syntax
 
 
-data Value a
-    = VLit Literal
-    | VClos (Env a) [a] (Expr a)
-    -- VFix is almost like VClos
-    -- but each time you evaluate it, you inject the defs into the old env
-    | VFix (Env a) [a] (Expr a) (M.Map a (Def a))
-
-type Env a = M.Map a (Value a)
-
-instance Pretty a => Show (Value a) where
-    show e = T.unpack $ docRender (pretty e)
-
-instance Pretty a => Pretty (Value a) where
-    pretty (VLit lit) = pretty lit
-    pretty (VClos _ _ _) = pretty "<closure>"
-    pretty (VFix _ _ _ _) = pretty "<fixed closure>"
+type Env = M.Map Name Value
 
 data InterpError
     = UnboundVar String
@@ -38,10 +19,10 @@ data InterpError
     | CondNotBool String
     deriving (Show)
 
-interp :: Ord a => Expr a -> IO (Either InterpError (Value a))
+interp :: Expr () -> IO (Either InterpError Value)
 interp expr = runExceptT $ interp' M.empty expr
 
-interp' :: Ord a => Env a -> Expr a -> ExceptT InterpError IO (Value a)
+interp' :: Env -> Expr () -> ExceptT InterpError IO Value
 interp' env (EVar x) = do
     case M.lookup x env of
         Just val -> return val
@@ -49,7 +30,7 @@ interp' env (EVar x) = do
 interp' env (ELit c) =
     return $ VLit c
 interp' env (EFun xs body) =
-    return $ VClos env xs body
+    return $ VClos env (fmap fst xs) body
 interp' env (EApp func args) = do
     func' <- interp' env func
     case func' of
@@ -71,7 +52,7 @@ interp' env (EApp func args) = do
 interp' env (EOpr prim args) = do
     args' <- mapM (interp' env) args
     interpOpr prim args'
-interp' env (ELet x e1 e2) = do
+interp' env (ELet x _ e1 e2) = do
     e1' <- interp' env e1
     interp' (M.insert x e1' env) e2
 interp' env (EFix defs e) =
@@ -87,7 +68,7 @@ interp' env (EIfte cond trbr flbr) = do
 interp' env (EAnno expr ty) =
     interp' env expr
 
-interpOpr :: Prim -> [Value a] -> ExceptT InterpError IO (Value a)
+interpOpr :: Prim -> [Value] -> ExceptT InterpError IO Value
 interpOpr INeg [VLit (LInt n)] =
     return $ VLit $ LInt (- n)
 interpOpr IAdd [VLit (LInt x), VLit (LInt y)] =
@@ -103,7 +84,7 @@ interpOpr BAnd [VLit (LBool x), VLit (LBool y)] =
 interpOpr BOr [VLit (LBool x), VLit (LBool y)] =
     return $ VLit $ LBool (x || y)
 interpOpr BXor [VLit (LBool x), VLit (LBool y)] =
-    return $ VLit $ LBool ((x && not y) || (not x && y))
+    return $ VLit $ LBool (x /= y)
 interpOpr IOReadInt [] = do
     s <- lift getLine
     case readMaybe s :: Maybe Int of
@@ -115,9 +96,9 @@ interpOpr IOWriteInt [VLit (LInt x)] = do
 interpOpr _  _ = throwError $ OprFailed "interpOpr failed!"
 
 -- the injection function.  tricky, tricky...
-injectFix :: Ord a => M.Map a (Def a) -> Env a -> Env a
+injectFix :: M.Map Name (Def ()) -> Env -> Env
 injectFix defs env =
-    let f Def{func,args,body} = VFix env args body defs
+    let f Def{func,args,body,typ} = VFix env (fmap fst args) body defs
     in fmap f defs `M.union` env
 
 icompare :: Compare -> Int -> Int -> Bool

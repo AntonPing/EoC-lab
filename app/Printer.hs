@@ -6,8 +6,8 @@ import Syntax
 
 import Prettyprinter as PP
 import Prettyprinter.Render.Text as PPRT
-import Text.Parsec (newline)
 import Prettyprinter.Render.String (renderString)
+
 -- import Interp
 
 --bracketed :: [Doc ann] -> Doc ann
@@ -34,10 +34,19 @@ instance Show Literal where
 instance Show Prim where
     show e = T.unpack $ docRender (pretty e)
 
-instance Pretty a => Show (Expr a) where
+instance Pretty ty => Show (Expr ty) where
     show e = T.unpack $ docRender (pretty e)
 
-instance Pretty a => Show (MonoType a) where
+instance Show MonoType where
+    show e = T.unpack $ docRender (pretty e)
+
+instance Show PolyType where
+    show e = T.unpack $ docRender (pretty e)
+
+instance Show Type where
+    show e = T.unpack $ docRender (pretty e)
+
+instance Show Value where
     show e = T.unpack $ docRender (pretty e)
 
 instance Pretty Literal where
@@ -78,7 +87,7 @@ instance Pretty a => Pretty (Expr a) where
         pretty func <> PP.tupled (fmap pretty args)
     pretty (EOpr prim args) =
         pretty prim <> PP.tupled (fmap pretty args)
-    pretty (ELet x e1 e2) =
+    pretty (ELet x ty e1 e2) =
         "let" <+> pretty x <+> "=" <+> pretty e1 <> ";" <> PP.hardline <>
         align (pretty e2)
     pretty (EFix defs e2) =
@@ -94,14 +103,6 @@ instance Pretty a => Pretty (Expr a) where
     pretty (EAnno expr ty) =
         pretty expr <+> ":" -- <+> pretty ty
 
-{-
-instance Pretty a => Pretty (Value a) where
-    pretty (VLit lit) = pretty lit
-    pretty (VClos _ _ _) = "<closure>"
-    pretty (VFix _ _ _ _) = "<fixed closure>"
--}
-
-
 instance Pretty LitType where
     pretty LitInt = "Int"
     pretty LitReal = "Real"
@@ -110,23 +111,30 @@ instance Pretty LitType where
     pretty LitUnit = "Unit"
     pretty LitVoid = "Void"
 
-{-
-instance Pretty Kind where
-    pretty Star = "*"
-    pretty (KArr k1 k2) = pretty k1 <+> "->" <+> pretty k2
--}
-
-instance Pretty a => Pretty (MonoType a) where
+instance Pretty MonoType where
     pretty (TLit lit) = pretty lit
     pretty (TVar x) = pretty x
+    pretty (TCon x) = pretty x
     pretty (TFun xs x) =
         "fn" <+> PP.encloseSep "(" ")" "," (fmap pretty xs) <+> "->" <+> pretty x
     pretty (TApp x xs) =
         pretty x <> PP.encloseSep "<" ">" "," (fmap pretty xs)
 
-    --pretty (TTup xs) = PP.encloseSep "(" ")" "," (fmap pretty xs)
-    --pretty (TSum xs) = PP.encloseSep "<" ">" "," (fmap pretty xs)
+instance Pretty PolyType where
+    pretty (PolyType [] ty) =
+        pretty ty
+    pretty (PolyType xs ty) =
+        "forall" <+> PP.sep (fmap pretty xs) <> "." <> pretty ty
 
+instance Pretty Type where
+    pretty (Mono ty) = pretty ty
+    pretty (Poly ty) = pretty ty
+
+{-
+instance Pretty Kind where
+    pretty Star = "*"
+    pretty (KArr k1 k2) = pretty k1 <+> "->" <+> pretty k2
+-}
 
 {-
 
@@ -138,3 +146,12 @@ instance Pretty Pattern where
     pretty (PLit lit) = pretty lit
     pretty PWild = "_"
 -}
+
+instance Pretty Value where
+    pretty (VLit lit) = pretty lit
+    pretty (VClos _ _ _) = "<closure>"
+    pretty (VFix _ _ _ _) = "<fixed closure>"
+
+instance Pretty InferError where
+    pretty (CantUnify a b) = "Can't Unify" <+> pretty a <+> "and" <+> pretty b <> "!"
+    pretty (VarNotInScope x) = "Variable" <+> pretty x <+> "is not in scope!"

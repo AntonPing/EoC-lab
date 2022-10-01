@@ -7,16 +7,16 @@ import Syntax
 import Control.Monad.State
 import Control.Monad.Cont
 
-data Atom a
+data Atom
     = ALit Literal
-    | AVar a
-    | ALabel a
+    | AVar Name
+    | ALabel Name
 
-data MExpr a
-    = MLet a Prim [Atom a] (MExpr a)
-    | MCall a (Atom a) [Atom a] (MExpr a)
-    | MRet (Atom a)
-    | MLabel a (MExpr a)
+data MExpr
+    = MLet Name Prim [Atom] MExpr
+    | MCall Name Atom [Atom] MExpr
+    | MRet Atom
+    | MLabel Name MExpr
 
 data Reg
     = Rax | Rcx | Rdx | Rbx
@@ -84,12 +84,12 @@ flatten' (EFix defs e) ctx =
     undefined
 -}
 
-flatten :: Expr a -> MExpr a
+flatten :: Expr ty -> MExpr
 flatten expr = 
     (flip evalState undefined . flip runContT (\a -> return $ MRet a))
     (flatten' expr)
 
-flatten' ::  Expr a -> ContT (MExpr a) NameGen (Atom a)
+flatten' ::  Expr a -> ContT MExpr NameGen Atom
 flatten' (ELit lit) = return $ ALit lit
 flatten' (EVar x) = return $ AVar x
 flatten' (EFun xs e) = undefined
@@ -104,7 +104,7 @@ flatten' (EOpr prim args) = do
     name <- lift genName
     let f expr = MLet name prim args' <$> expr;
     mapContT f (return $ AVar name)
-flatten' (ELet x e1 e2) = do
+flatten' (ELet x ty e1 e2) = do
     e1' <- flatten' e1
     let f expr = MLet x Move [e1'] <$> expr;
     mapContT f (flatten' e2)

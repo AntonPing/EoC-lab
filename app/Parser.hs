@@ -27,11 +27,13 @@ langDef = Tok.LanguageDef
     , Tok.opLetter        = oneOf ":!#$%&*+./<=>?@\\^|-~"
     , Tok.reservedNames   = [
         "=", "->", "=>",
-        "fn", "let", "letrec", "in",
+        "fn", "let", "letrec", "in", "end",
         "match", "case", "of", "|",
         "if","then","else",
         "true", "false","()",
         "iadd","isub","ineg",
+        "cmpeq","cmpne","cmpgr","cmpls","cmpge","cmple",
+        "band","bor","bxor","bnot",
         "read-int", "write-int"
     ]
     , Tok.reservedOpNames = []
@@ -89,96 +91,114 @@ literal = LInt <$> litInt
     <|> LUnit <$ litUnit
     <?> "literal"
 
-prim :: Parser Prim
-prim = IAdd <$ reserved "iadd"
+primitive :: Parser Prim
+primitive = IAdd <$ reserved "iadd"
     <|> ISub <$ reserved "isub"
     <|> INeg <$ reserved "ineg"
-    <|> INeg <$ reserved "ineg"
+    <|> ICmp Eq <$ reserved "cmpeq"
+    <|> ICmp Ne <$ reserved "cmpne"
+    <|> ICmp Gr <$ reserved "cmpgr"
+    <|> ICmp Ls <$ reserved "cmpls"
+    <|> ICmp Ge <$ reserved "cmpge"
+    <|> ICmp Le <$ reserved "cmple"
+    <|> BAnd <$ reserved "band"
+    <|> BOr <$ reserved "bor"
+    <|> BNot <$ reserved "bnot"
+    <|> BNot <$ reserved "bxor"
 
-varName :: Parser Name
-varName = Tok.identifier lexer
+name :: Parser Name
+name = Tok.identifier lexer
 
-eLit :: Parser (Expr Name)
+exprNoApp :: Parser (Expr (Maybe Type))
+exprNoApp = choice 
+    [ eLit, eVar, eFun, eOpr, eLet, eFix, eIfte, parens expr ]
+
+expr :: Parser (Expr (Maybe Type))
+expr = do
+    func <- exprNoApp
+    argss <- many $ tupled expr
+    return $ foldl EApp func argss
+
+eLit :: Parser (Expr (Maybe Type))
 eLit = ELit <$> literal
 
-eVar :: Parser (Expr Name)
-eVar = EVar <$> varName
+eVar :: Parser (Expr (Maybe Type))
+eVar = EVar <$> name
 
-eFun :: Parser (Expr Name)
+eFun :: Parser (Expr (Maybe Type))
 eFun = do
     reserved "fn" <?> "token \"fn\""
-    args <- many1 varName <?> "parameter list"
+    args <- tupled name <?> "parameter list"
     reserved "=>" <?> "token \"->\""
-    body <- eAppOpr <?> "function body"
-    return $ EFun args body
-
-
--- kind of confusing, 'cause it doesn't always returns applaction
--- for example: (f x y) will return EApp f [EVar x, EVar y]
--- and (f x) will return EApp f []
--- while (f) will return EVar f
-eApp :: Parser (Expr Name)
-eApp = parens eAppOpr
+    body <- expr <?> "function body"
+    let args' = fmap (\arg -> (arg,Nothing)) args
+    return $ EFun args' body
 
 tupled :: Parser a -> Parser [a]
 tupled p = parens $ sepBy p (char ',')
 
-def :: Parser (Def Name)
-def = do
-    func <- varName <?> "parameter list"
-    args <- tupled varName
-    reserved "="
-    body <- expr <?> "function body"
-    return $ Def { func, args, body }
+-- backtracking is bad, this is never used.
+eApp :: Parser (Expr (Maybe Type))
+eApp = do
+    func <- expr
+    args <- tupled expr
+    return $ EApp func args
 
-eLet :: Parser (Expr Name)
+eOpr :: Parser (Expr (Maybe Type))
+eOpr = do
+    prim <- primitive
+    args <- tupled expr
+    return $ EOpr prim args
+
+eLet :: Parser (Expr (Maybe Type))
 eLet = do
     reserved "let"
-    name <- varName
+    name <- name
     reserved "="
     body <- expr
     reserved ";"
     cont <- expr
-    return $ ELet name body cont
+    let typ = Nothing
+    return $ ELet name typ body cont
 
-eFix :: Parser (Expr Name)
+def :: Parser (Def (Maybe Type))
+def = do
+    func <- name <?> "function name"
+    args <- tupled name <?> "parameter list"
+    reserved "="
+    body <- expr <?> "function body"
+    reserved ";"
+    let typ = Nothing
+    let args' = fmap (\a -> (a, Nothing)) args
+    return $ Def { func, args = args', body, typ }
+
+eFix :: Parser (Expr (Maybe Type))
 eFix = do
     reserved "letrec"
-    defs <- sepBy1 def (reserved ";")
+    defs <- many1 def
     reserved "in"
     cont <- expr
+    reserved "end"
     return $ EFix defs cont
 
--- returns either EApp or EOpr
-eAppOpr :: Parser (Expr Name)
-eAppOpr = parens $ do
-    mayprim <- optionMaybe prim
-    xs <- sepBy1 expr spaces
-    case (mayprim,xs) of
-        (Just prim, args) ->
-            if arity prim == length args
-            then return $ EOpr prim args
-            else fail "arity doesn't match"
-        (Nothing, func:args) ->
-            return $ EApp func args
-        (Nothing, []) ->
-            -- this should never happen, 'cause "()" is a keyword for unit
-            fail "application without function, what?"
-
-expr :: Parser (Expr Name)
-expr = choice 
-    [ eAppOpr, eLit, eVar, eFun, eLet, eFix ]
-
-
+eIfte :: Parser (Expr (Maybe Type))
+eIfte = do
+    reserved "if"
+    cond <- expr
+    reserved "then"
+    trbr <- expr
+    reserved "else"
+    flbr <- expr
+    return $ EIfte cond trbr flbr
 
 {-
 
 pVar :: Parser Pattern
-pVar = PVar <$> varName
+pVar = PVar <$> name
 {-
 pCon :: Parser Pattern
 pCon = parens $ do
-    x <- varName
+    x <- name
     xs <- sepBy1 pattern' spaces
     return $ PCon x xs
 -}
@@ -214,5 +234,5 @@ case' = do
 -}
 
 
-parseExpr :: String -> Either ParseError (Expr Name)
+parseExpr :: String -> Either ParseError (Expr (Maybe Type))
 parseExpr = parse expr "input"

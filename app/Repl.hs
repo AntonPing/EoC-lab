@@ -12,9 +12,10 @@ import qualified Data.Map as M
 import qualified Data.List as L
 import qualified Data.Text as T
 
-import Syntax ( Expr, Name, MonoType )
-import ParserNew (parseExpr)
+import Syntax
+
 import Printer
+import Parser
 import Interp
 import Control.Monad.Except (ExceptT, MonadError (throwError), runExceptT)
 import TypeCheck (typeInferTop)
@@ -27,11 +28,6 @@ data ReplError = ReplError
 -- Options --
 help :: Cmd Repl
 help arg = liftIO $ print $ "Help: " ++ show arg
-
-say :: Cmd Repl
-say arg = do
-    liftIO $ putStrLn $ "cowsay" ++ " " ++ arg
-    return ()
 
 quit :: Cmd Repl
 quit arg = abort
@@ -47,11 +43,11 @@ eval arg = do
     liftIO $ print expr
     ty <- replTypeInfer expr
     liftIO $ print ty
-    val <- replInterp expr
+    val <- replInterp (eraseType expr)
     liftIO $ print val
     return ()
 
-replParse :: String -> Repl (Expr Name)
+replParse :: String -> Repl (Expr (Maybe Type))
 replParse arg = 
     case parseExpr arg of
         Left err -> do
@@ -60,15 +56,16 @@ replParse arg =
         Right expr -> return expr
     
 
-replTypeInfer :: Expr Name -> Repl (MonoType Name)
+replTypeInfer :: Expr (Maybe Type) -> Repl (Expr Type)
 replTypeInfer expr =
     case typeInferTop expr of
         Left errs -> do
             liftIO $ putStrLn "typecheck failed."
+            liftIO $ prettyPrint errs
             lift $ throwError ReplError
         Right ty -> return ty
 
-replInterp :: Expr Name -> Repl (Value Name)
+replInterp :: Expr () -> Repl Value
 replInterp expr = do
     res <- liftIO $ interp expr
     case res of
@@ -90,7 +87,6 @@ replCmd = eval
 replOpts :: Options Repl
 replOpts =
     [ ("help", help)
-    , ("say", say)
     , ("eval", eval)
     , ("quit", quit)
     , ("load", load)
